@@ -2,7 +2,7 @@
 // 設定項目
 // --------------------------------------------------
 // Vercel APIのエンドポイントURL (環境に合わせて変更)
-const serverUrl = 'YOUR_VERCEL_API_URL_HERE'; // ★★★ 要変更 ★★★ 
+const serverUrl = 'https://saku-pointrally-proxy.vercel.app/api'; // ★★★ 要変更 ★★★ 
                                              // 例: 'https://your-proxy-project.vercel.app/api'
 
 // スキャン成功/エラーメッセージ表示後の自動リダイレクト時間（ミリ秒）
