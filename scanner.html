@@ -7,67 +7,80 @@
     <script src="https://unpkg.com/html5-qrcode/minified/html5-qrcode.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
+        /* 基本的なスタイル */
         body {
             font-family: sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
+            min-height: 100vh; /* 画面の高さいっぱいに広げる */
             margin: 0;
+            padding: 10px; /* 少し余白を追加 */
+            box-sizing: border-box; /* paddingを含めてサイズ計算 */
             background-color: #f4f4f4;
         }
+        /* QRリーダー表示エリア */
         #qr-reader {
-            width: 90%;
-            max-width: 500px;
+            width: 100%; /* 幅を100%に */
+            max-width: 500px; /* 最大幅を設定 */
             border: 1px solid #ccc;
             background-color: #fff;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 20px; /* 結果表示エリアとの間に余白 */
         }
-        #qr-reader-results {
-            margin-top: 20px;
-            padding: 15px;
-            border-radius: 5px;
-            width: 90%;
-            max-width: 500px;
-            text-align: center;
-            font-size: 1.1em;
-            display: none; /* Initially hidden */
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            background-color: #e0f7fa; /* Default background */
-            color: #00796b; /* Default text color */
-            border: 1px solid #b2dfdb;
-        }
-        #qr-reader-results.success {
-            background-color: #e8f5e9; /* Green background for success */
-            color: #2e7d32;
-            border: 1px solid #c8e6c9;
-        }
-        #qr-reader-results.error {
-            background-color: #ffebee; /* Red background for error */
-            color: #c62828;
-            border: 1px solid #ffcdd2;
-        }
-        /* Style for the select dropdown */
+        /* カメラ選択ドロップダウンのスタイル */
         #qr-reader select {
             padding: 8px;
             margin-top: 10px;
             border-radius: 4px;
             border: 1px solid #ccc;
+            width: calc(100% - 20px); /* 親要素に合わせて調整 */
+            margin-left: 10px;
+            margin-right: 10px;
+            box-sizing: border-box;
         }
-        /* Hide file scan button */
+        /* 結果表示エリア */
+        #qr-reader-results {
+            padding: 15px;
+            border-radius: 5px;
+            width: 100%; /* 幅を100%に */
+            max-width: 500px; /* 最大幅を設定 */
+            text-align: center;
+            font-size: 1.1em;
+            display: none; /* 初期状態では非表示 */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            background-color: #e0f7fa; /* デフォルト背景 */
+            color: #00796b; /* デフォルト文字色 */
+            border: 1px solid #b2dfdb;
+            word-wrap: break-word; /* 長いメッセージがはみ出ないように */
+            box-sizing: border-box;
+        }
+        /* 成功時のスタイル */
+        #qr-reader-results.success {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+        }
+        /* エラー時のスタイル */
+        #qr-reader-results.error {
+            background-color: #ffebee;
+            color: #c62828;
+            border: 1px solid #ffcdd2;
+        }
+        /* html5-qrcodeライブラリの不要なUI要素を隠す */
+        /* ファイルからスキャンボタンを隠す */
         #qr-reader__dashboard_section_csr > div > button {
            display: none !important;
         }
-         /* Hide QR code scanning region */
-        #qr-reader__scan_region {
-            /* display: none !important; */ /* Optionally hide if needed */
+        /* スキャン領域の境界線 (必要に応じて調整) */
+        #qr-reader__scan_region video {
+            /* object-fit: cover; */ /* ビデオ表示の調整 */
         }
-        /* Icon styling */
+        /* アイコンのスタイル */
         .icon {
             margin-right: 8px;
         }
-
     </style>
 </head>
 <body>
