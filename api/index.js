@@ -11,7 +11,7 @@ module.exports = async (req, res) => {
   // OPTIONSメソッドのリクエストは、実際のPOSTリクエストの前にブラウザが送信する
   // これに応答して、どのオリジンからのリクエストを許可するかなどを伝える
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', 'YOUR_GITHUB_PAGES_DOMAIN_HERE'); // ★★★ 下で変更します ★★★
+    res.setHeader('Access-Control-Allow-Origin', 'https://y2ueno.github.io/saku_pointrally_scanner/'); // ★★★ 下で変更します ★★★
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
@@ -26,7 +26,7 @@ module.exports = async (req, res) => {
   }
 
   // --- Set CORS header for the actual POST response ---
-  res.setHeader('Access-Control-Allow-Origin', 'YOUR_GITHUB_PAGES_DOMAIN_HERE'); // ★★★ 下で変更します ★★★
+  res.setHeader('Access-Control-Allow-Origin', 'https://y2ueno.github.io/saku_pointrally_scanner/'); // ★★★ 下で変更します ★★★
 
   // --- Validate APPS_SCRIPT_URL ---
   if (!APPS_SCRIPT_URL) {
