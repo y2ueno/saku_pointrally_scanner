@@ -1,7 +1,7 @@
 // --------------------------------------------------
 // 設定項目
 // --------------------------------------------------
-const serverUrl = 'YOUR_VERCEL_API_URL_HERE'; // ★★★ 第5章で変更します ★★★ 
+const serverUrl = 'https://saku-pointrally-proxy.vercel.app/api'; // ★★★ 第5章で変更します ★★★ 
 const redirectTimeout = 5000; // 5秒
 
 // --------------------------------------------------
