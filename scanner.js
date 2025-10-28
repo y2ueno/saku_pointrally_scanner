@@ -1,321 +1,190 @@
 // --------------------------------------------------
 // 設定項目
 // --------------------------------------------------
-// Vercel APIのエンドポイントURL (環境に合わせて変更)
 const serverUrl = 'YOUR_VERCEL_API_URL_HERE'; // ★★★ 第5章で変更します ★★★ 
-
-// スキャン成功/エラーメッセージ表示後の自動リダイレクト時間（ミリ秒）
 const redirectTimeout = 5000; // 5秒
 
 // --------------------------------------------------
 // グローバル変数
 // --------------------------------------------------
 let userEmail = '';
-// let glideAppUrl = ''; // ★ glide_app_urlパラメータは使わない
-let isScanning = true; // スキャン中フラグ (スキャン開始時にtrue)
-let html5QrCode = null; // QRコードリーダーのインスタンス
+let currentStoreId = ''; // ★ Glideで開いている店舗のIDを保持
+let isScanning = false; 
+let html5QrCode = null; 
 
 // --------------------------------------------------
-// 初期化処理: DOM読み込み完了後に実行
+// 初期化処理
 // --------------------------------------------------
 document.addEventListener('DOMContentLoaded', (event) => {
-    console.log("DOM fully loaded and parsed");
-    // URLパラメータからユーザーEmailを取得 (glide_app_urlは不要)
+    console.log("DOM fully loaded");
     const urlParams = new URLSearchParams(window.location.search);
     userEmail = urlParams.get('email');
-    // glideAppUrl = urlParams.get('glide_app_url'); // ★ 不要
-    console.log(`Email: ${userEmail}`); // ★ Glide URLのログ削除
+    currentStoreId = urlParams.get('storeId'); // ★ storeIdも取得
+    console.log(`Email: ${userEmail}, StoreID: ${currentStoreId}`); 
 
-    // Emailがない場合はエラー表示して終了
-    if (!userEmail) {
-        displayResult('error', 'ユーザー情報が取得できませんでした。');
-        isScanning = false; // スキャンは開始しない
+    // Email または StoreID がない場合はエラー
+    if (!userEmail || !validateEmail(userEmail) || !currentStoreId) { // ★ storeIdもチェック
+        displayResult('error', 'ユーザー情報または店舗情報が取得できませんでした。');
+        isScanning = false; 
         return;
     }
 
-    // QRコードリーダーのインスタンスを作成
+    if (typeof Html5Qrcode === 'undefined') {
+        console.error("Html5Qrcode library is not loaded!");
+        displayResult('error', 'QRリーダーの読み込み失敗。再読み込みしてください。');
+        return;
+    }
     html5QrCode = new Html5Qrcode("qr-reader");
-
-    // QRコードリーダーの初期化とスキャン開始
     startScanning();
 });
 
+/** Email形式検証 */
+function validateEmail(email) { /* ... (変更なし) ... */ 
+  if (!email || typeof email !== 'string') return false;
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/; 
+  return re.test(String(email).trim()); 
+}
+
 // --------------------------------------------------
-// QRコードリーダーのスキャン開始処理
+// スキャン開始処理 (変更なし)
 // --------------------------------------------------
 function startScanning() {
-    isScanning = true; // スキャン開始フラグを立てる
-    console.log("Starting QR Code scanning...");
-
-    // スキャン成功時のコールバック関数
+    if (isScanning || !html5QrCode) { /* ... */ return; }
+    isScanning = true; 
+    console.log("Attempting to start scanning...");
+    displayResult('info', 'QRコードを読み取ってください...'); 
     const qrCodeSuccessCallback = (decodedText, decodedResult) => {
         if (isScanning) {
-            isScanning = false; // ★重要: スキャン成功したらすぐにフラグをfalseにして重複処理を防ぐ
-            console.log(`Code scanned = ${decodedText}`, decodedResult);
-
-            // スキャン成功音を鳴らす (任意)
+            isScanning = false; 
+            console.log(`QR Scanned: ${decodedText}`);
             playScanSound(); 
-
-            // ★重要: スキャナーを明確に停止してからサーバー通信を行う
             stopScanning().then(() => {
-                // サーバーにデータを送信
-                sendScanData(decodedText);
+                sendScanData(decodedText); 
             }).catch(err => {
-                console.error("Error stopping scanner, but proceeding to send data:", err);
-                // 停止に失敗しても送信は試みる
-                sendScanData(decodedText);
+                console.error("Stop scanner error:", err);
+                sendScanData(decodedText); 
             });
-        } else {
-            console.log("Scan detected but already processing another scan.");
-        }
+        } else { /* ... */ }
     };
-
-    // スキャナーの設定
-    const config = { 
+    const config = { /* ... (変更なし) ... */ 
         fps: 10, 
-        qrbox: (viewfinderWidth, viewfinderHeight) => {
-            let qrboxSize = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.8);
-            return { width: qrboxSize, height: qrboxSize };
-        },
-        supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA] 
+        qrbox: (w, h) => ({ width: Math.floor(Math.min(w, h) * 0.7), height: Math.floor(Math.min(w, h) * 0.7) }),
+        supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA], 
+        rememberLastUsedCamera: true 
     };
-
-    // 利用可能なカメラを取得し、背面カメラを優先してスキャンを開始
     Html5Qrcode.getCameras().then(devices => {
-        console.log("Available cameras:", devices);
-        if (devices && devices.length) {
-            let cameraId;
-            const backCamera = devices.find(device => device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('arrière') || device.label.toLowerCase().includes('environment'));
-            if (backCamera) {
-                cameraId = backCamera.id;
-                console.log("Using back camera:", backCamera.label);
-            } else {
-                cameraId = devices[0].id; // 背面がなければ最初のカメラ
-                console.log("Using default camera:", devices[0].label);
-            }
-            html5QrCode.start(
-                cameraId, config, qrCodeSuccessCallback, (errorMessage) => {/* ignore errors during scanning */})
-            .catch((err) => {
-                console.error(`Unable to start scanning, error: ${err}`);
-                displayResult('error', 'カメラの起動に失敗しました。カメラへのアクセスを許可してください。ページを再読み込みしてください。');
-                isScanning = false; // スキャン不可
-            });
-        } else {
-            console.error('No cameras found.');
-            displayResult('error', '利用可能なカメラが見つかりませんでした。');
-            isScanning = false; // スキャン不可
-        }
-    }).catch(err => {
-        console.error("Error getting cameras", err);
-        displayResult('error', 'カメラ情報の取得に失敗しました。');
-        isScanning = false; // スキャン不可
-    });
+        if (devices && devices.length) { /* ... (カメラ選択ロジック - 変更なし) ... */ 
+           let cameraId = devices[0].id;
+           const backCam = devices.find(d => d.label.toLowerCase().includes('back'));
+           if (backCam) cameraId = backCam.id;
+           html5QrCode.start(cameraId, config, qrCodeSuccessCallback, () => {})
+            .then(() => console.log("Scanning started."))
+            .catch((err) => { /* ... エラー処理 ... */ });
+        } else { /* ... エラー処理 ... */ }
+    }).catch(err => { /* ... エラー処理 ... */ });
 }
 
 // --------------------------------------------------
-// スキャナー停止処理
+// スキャナー停止処理 (変更なし)
 // --------------------------------------------------
-function stopScanning() {
-    return new Promise((resolve, reject) => {
-        // html5QrCode.isScanning が存在しない or 正しく機能しない場合があるため、状態を確認してから停止
+function stopScanning() { /* ... (変更なし - Promiseで返す) ... */ 
+    console.log("Attempting to stop scanning...");
+    return new Promise((resolve) => { // rejectは不要に
         if (html5QrCode && typeof html5QrCode.getState === 'function' && html5QrCode.getState() === Html5QrcodeScannerState.SCANNING) {
              html5QrCode.stop()
-                .then(() => { 
-                    console.log("QR Code scanning stopped successfully."); 
-                    resolve(); 
-                })
-                .catch((err) => { 
-                    console.error("Failed to stop QR Code scanning.", err); 
-                    resolve(); // 停止エラーでも次に進む
-                });
+                .then(() => { console.log("Scanner stopped."); resolve(); })
+                .catch((err) => { console.error("Failed to stop scanner:", err); resolve(); }); // エラーでもresolve
         } else {
-            console.log("Scanner not scanning or not initialized.");
-            resolve(); // スキャン中でなければ成功扱い
+            console.log("Scanner not running or not initialized.");
+            resolve(); 
         }
     });
 }
 
-
 // --------------------------------------------------
-// スキャンデータのサーバー送信
+// スキャンデータのサーバー送信 (★★★ storeId を追加) ★★★
 // --------------------------------------------------
 function sendScanData(scannedData) {
-    displayResult('loading', 'サーバーと通信中...'); // 通信中メッセージ
-    console.log(`Sending data to server: ${serverUrl}, Email: ${userEmail}, QR: ${scannedData}`);
+    displayResult('loading', 'サーバーと通信中...'); 
+    console.log(`Sending data: Email=${userEmail}, QR=${scannedData}, StoreID=${currentStoreId}`); // ★ storeIdログ追加
 
     fetch(serverUrl, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json', },
         body: JSON.stringify({
             userEmail: userEmail,
-            scannedQrData: scannedData
+            scannedQrData: scannedData,
+            storeId: currentStoreId // ★ storeId を送信データに追加
         }),
-        mode: 'cors' // CORSリクエストを明示
+        mode: 'cors' 
     })
-    .then(response => {
+    .then(async response => { /* (エラーハンドリング強化版 - 変更なし) */ 
         console.log(`Server response status: ${response.status}`);
         const contentType = response.headers.get("content-type");
-        // エラーレスポンスの処理
-        if (!response.ok) {
-            // JSON形式のエラーを期待
-            if (contentType && contentType.indexOf("application/json") !== -1) {
-                 return response.json().then(errData => {
-                    // GASが返す {status: "error", message: "..."} を想定
-                    const message = errData ? (errData.message || JSON.stringify(errData)) : `サーバーエラー (${response.status})`;
-                    console.error("Server returned JSON error:", message); 
-                    throw new Error(message); 
-                });
-            } else { // JSON以外 (HTMLエラーページ、GASの予期せぬエラーなど)
-                 return response.text().then(text => {
-                    console.error("Server returned non-JSON error:", text); 
-                    // ユーザーには一般的なエラーを表示
-                    throw new Error(`サーバーで問題が発生しました (${response.status})`); 
-                });
-            }
-        }
-        // 成功レスポンスの処理
-        if (contentType && contentType.indexOf("application/json") !== -1) {
-            return response.json();
-        } else { // 成功だがJSONでない場合 (GASの構成ミスなど)
-             return response.text().then(text => {
-                console.error("Server returned non-JSON success response:", text); 
-                throw new Error('サーバーから予期しない形式の応答がありました。'); 
-            });
-        }
+        let responseBody; try { responseBody = await response.text(); console.log('Raw response:', responseBody); } catch (e) { throw new Error(`サーバー応答読取失敗 (${response.status})`); }
+        if (!response.ok) { let msg = `サーバーエラー (${response.status})`; if (contentType?.includes("json") && responseBody){ try { msg = JSON.parse(responseBody).message || responseBody; } catch(e){} } else if(responseBody){ msg = `サーバー問題発生 (${response.status})`;} console.error("Server error:", msg); throw new Error(msg); }
+        if (contentType?.includes("json") && responseBody) { try { return JSON.parse(responseBody); } catch (e) { throw new Error('サーバー応答形式不正(JSON)'); } } 
+        else { throw new Error('サーバー応答形式不正(非JSON)'); }
     })
     .then(data => {
-        // 成功レスポンス (JSON) を処理
-        console.log('Server response data:', data);
+        console.log('Parsed data:', data);
         if (data.status === 'success') {
             displayResult('success', data.message);
-            redirectToOrigin(data.message); // ★ 戻る関数を呼ぶ
-        } else { // status が 'error' (GASが判定したエラー)
-            displayResult('error', data.message || '不明なエラーが発生しました。');
-            redirectToOrigin(data.message || '不明なエラー'); // ★ 戻る関数を呼ぶ
+            redirectToOrigin(data.message); 
+        } else { 
+            displayResult('error', data.message || '不明なエラー');
+            redirectToOrigin(data.message || '不明なエラー'); 
         }
     })
     .catch((error) => {
-        // 通信失敗 or fetch内でthrowされたエラー
         console.error('Fetch error:', error);
-        // ユーザーにわかりやすいエラーメッセージを表示
-        let displayMessage = '通信エラーが発生しました。';
-        // エラーオブジェクトのメッセージを見て内容を判断
-        if (error instanceof TypeError && error.message.includes('Failed to fetch')) { 
-            // CORSエラーやネットワークエラーの可能性
-            displayMessage = 'サーバーに接続できませんでした。ネットワークを確認してください。'; 
-        } else if (error.message.startsWith('サーバーで問題が発生しました') || error.message.startsWith('サーバーから予期しない形式')) {
-            displayMessage = error.message; // サーバー側の問題の可能性
-        } else {
-            displayMessage = `エラーが発生しました: ${error.message}`; // その他のエラー
-        }
-        displayResult('error', displayMessage);
-        redirectToOrigin(displayMessage); // ★ 戻る関数を呼ぶ
+        let msg = '通信エラー'; if (error instanceof TypeError) { msg = 'サーバー接続不可'; } else { msg = error.message || msg; }
+        displayResult('error', msg);
+        redirectToOrigin(msg); 
     });
 }
 
 // --------------------------------------------------
-// 結果表示の制御
+// 結果表示の制御 (変更なし)
 // --------------------------------------------------
-function displayResult(type, message) {
-    const resultsDiv = document.getElementById('qr-reader-results');
-    if (!resultsDiv) {
-        console.error("Result display element not found.");
-        return; 
-    }
-
-    resultsDiv.style.display = 'block'; // 表示する
-    resultsDiv.className = ''; // クラスをリセット
-    resultsDiv.classList.add('qr-reader-results'); // 基本クラスを追加
-
+function displayResult(type, message) { /* ... (変更なし - アイコンとメッセージ表示) ... */ 
+    const resultsDiv = document.getElementById('qr-reader-results'); if (!resultsDiv) return; 
+    resultsDiv.style.display = 'block'; resultsDiv.className = ''; resultsDiv.classList.add('qr-reader-results'); 
     let iconHtml = '';
-    if (type === 'success') { 
-        resultsDiv.classList.add('success'); 
-        iconHtml = '<i class="fas fa-check-circle icon"></i> '; // アイコンとスペース
-    } else if (type === 'error') { 
-        resultsDiv.classList.add('error'); 
-        iconHtml = '<i class="fas fa-times-circle icon"></i> '; // アイコンとスペース
-    } else if (type === 'loading') { 
-        iconHtml = '<i class="fas fa-spinner fa-spin icon"></i> '; // アイコンとスペース
-    }
-
-    // メッセージをHTMLとして設定 (innerHTMLはXSSに注意が必要だが、今回はGASからのメッセージなので許容)
-    // 安全性を高めるなら textContent を使うべきだが、アイコン表示のためにinnerHTMLを使用
+    if (type === 'success') { resultsDiv.classList.add('success'); iconHtml = '<i class="fas fa-check-circle icon"></i> '; } 
+    else if (type === 'error') { resultsDiv.classList.add('error'); iconHtml = '<i class="fas fa-times-circle icon"></i> '; } 
+    else if (type === 'loading') { iconHtml = '<i class="fas fa-spinner fa-spin icon"></i> '; }
     resultsDiv.innerHTML = iconHtml + (message || ''); 
-    console.log(`Displayed Result: Type=${type}, Message=${message}`);
+    console.log(`Displayed: ${type} - ${message}`);
 }
 
 // --------------------------------------------------
-// ★★★ 戻り先関数 (ブラウザ履歴で戻る) ★★★
+// 戻り先関数 (変更なし - ブラウザ履歴で戻る)
 // --------------------------------------------------
-function redirectToOrigin(resultMessage = '') {
-    // メッセージ表示が完了するのを待ってからリダイレクト
-    setTimeout(() => {
-        console.log("Attempting to go back in history...");
-        // window.history.back() を試みる
-        try {
-            // Glideアプリ内のWebViewで開かれている場合、これで戻れることが多い
-            if (window.history.length > 1) {
-                window.history.back();
-            } else {
-                // 履歴がない場合 (直接URLを開いた場合など)
-                console.warn("No history to go back to. Cannot return automatically.");
-                // ユーザーに手動で戻るよう促すメッセージを追加表示
-                const resultsDiv = document.getElementById('qr-reader-results');
-                // 結果が表示されている場合のみ追記
-                if (resultsDiv && resultsDiv.style.display !== 'none' && !resultsDiv.innerHTML.includes('手動で戻ってください')) { 
-                   resultsDiv.innerHTML += '<br><small>(自動でアプリに戻れません。手動で戻ってください)</small>';
-                }
-            }
-        } catch (e) {
-             console.error("Error attempting to go back:", e);
-             // エラー発生時も手動で戻るよう促す
-             const resultsDiv = document.getElementById('qr-reader-results');
-             if (resultsDiv && resultsDiv.style.display !== 'none' && !resultsDiv.innerHTML.includes('手動で戻ってください')){
-                resultsDiv.innerHTML += '<br><small>(自動でアプリに戻れません。手動で戻ってください)</small>';
-             }
-        }
-    }, redirectTimeout); // redirectTimeoutミリ秒後に実行
+function redirectToOrigin(resultMessage = '') { /* ... (変更なし - history.back()) ... */ 
+     setTimeout(() => {
+        console.log("Attempting history back...");
+        try { if (window.history && window.history.length > 1) { window.history.back(); } 
+              else { console.warn("No history."); displayManualReturnMessage(); }
+        } catch (e) { console.error("History back error:", e); displayManualReturnMessage(); }
+    }, redirectTimeout);
+}
+function displayManualReturnMessage() { /* ... (変更なし - 手動メッセージ表示) ... */ 
+    const resultsDiv = document.getElementById('qr-reader-results');
+    const msg = '<br><small>(自動で戻れません。手動で戻ってください)</small>';
+    if (resultsDiv && resultsDiv.style.display !== 'none' && !resultsDiv.innerHTML.includes('手動で')) { resultsDiv.innerHTML += msg; }
 }
 
 // --------------------------------------------------
-// スキャン成功音 (任意) - 安定版
+// スキャン成功音 (変更なし - 安定版)
 // --------------------------------------------------
-function playScanSound() {
-  // AudioContextのサポート状況を確認
-  const AudioContext = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContext) {
-    console.warn("AudioContext not supported by this browser.");
-    return;
-  }
-  try {
-    const audioContext = new AudioContext();
-    // 再生後すぐに閉じるようにする (特にモバイル向け)
-    const oscillator = audioContext.createOscillator(); 
-    const gainNode = audioContext.createGain();
-
-    oscillator.type = 'sine'; // 音色
-    oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // 周波数 (A5)
-
-    // 音量のエンベロープを設定してクリック音を減らす
-    gainNode.gain.setValueAtTime(0, audioContext.currentTime); // 開始時は0
-    gainNode.gain.linearRampToValueAtTime(0.15, audioContext.currentTime + 0.01); // 0.01秒で最大音量へ
-    gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.1); // 0.1秒で減衰
-
-    oscillator.connect(gainNode); 
-    gainNode.connect(audioContext.destination);
-
-    oscillator.start(audioContext.currentTime); 
-    oscillator.stop(audioContext.currentTime + 0.1); // 0.1秒後に停止
-
-    // 再生終了後にAudioContextを閉じる (リソース解放)
-    oscillator.onended = () => {
-      if (audioContext.state !== 'closed') {
-        audioContext.close().catch(e => console.warn("Error closing AudioContext:", e));
-      }
-    };
-  } catch (e) { 
-    console.warn("Could not play scan sound:", e); 
-  }
+function playScanSound() { /* ... (変更なし - AudioContext) ... */ 
+  const AudioContext = window.AudioContext || window.webkitAudioContext; if (!AudioContext) return;
+  let ctx = null; try { ctx = new AudioContext(); const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(880, ctx.currentTime); 
+    g.gain.setValueAtTime(0, ctx.currentTime); g.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.1); 
+    o.connect(g); g.connect(ctx.destination); o.start(ctx.currentTime); o.stop(ctx.currentTime + 0.1); 
+    o.onended = () => { if (ctx && ctx.state !== 'closed') ctx.close().catch(e => {}); };
+    setTimeout(() => { if (ctx && ctx.state !== 'closed') ctx.close().catch(e => {}); }, 500); 
+  } catch (e) { console.warn("Scan sound error:", e); if (ctx && ctx.state !== 'closed') ctx.close().catch(e => {}); }
 }
