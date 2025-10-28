@@ -1,74 +1,89 @@
 // Vercel Serverless Function (Node.js)
 // Path: /api/index.js
 
-const fetch = require('node-fetch'); // node-fetch v2 を想定
-
-// 環境変数からGASのURLを取得
+const fetch = require('node-fetch'); 
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 
 module.exports = async (req, res) => {
-  // --- CORS Preflight Request Handling ---
-  // OPTIONSメソッドのリクエストは、実際のPOSTリクエストの前にブラウザが送信する
-  // これに応答して、どのオリジンからのリクエストを許可するかなどを伝える
+  // --- CORS Preflight (OPTIONS) ---
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', 'https://y2ueno.github.io/saku_pointrally_scanner/'); // ★★★ 下で変更します ★★★
+    res.setHeader('Access-Control-Allow-Origin', 'https://y2ueno.github.io'); // ★★★ 下で変更 ★★★
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
-    res.status(204).end(); // No Content
+    res.setHeader('Access-Control-Max-Age', '86400'); 
+    console.log('Responding to OPTIONS request from origin:', req.headers.origin);
+    res.status(204).end(); 
     return;
   }
 
-  // --- Allow only POST requests ---
+  // --- Method Check (POST only) ---
   if (req.method !== 'POST') {
+    console.log(`Method Not Allowed: ${req.method}`);
+    res.setHeader('Access-Control-Allow-Origin', 'https://y2ueno.github.io'); // ★★★ 下で変更 ★★★
+    res.setHeader('Content-Type', 'application/json');
     res.status(405).json({ status: 'error', message: 'Method Not Allowed' });
     return;
   }
 
-  // --- Set CORS header for the actual POST response ---
-  res.setHeader('Access-Control-Allow-Origin', 'https://y2ueno.github.io/saku_pointrally_scanner/'); // ★★★ 下で変更します ★★★
+  // --- CORS for POST ---
+  const requestOrigin = req.headers.origin;
+  const allowedOrigin = 'YOUR_GITHUB_PAGES_BASE_URL_HERE'; // ★★★ 下で変更 ★★★
+  // オリジンチェック (本番では厳密に)
+  // if (requestOrigin === allowedOrigin || !requestOrigin) { // 同一オリジン or 直接アクセス
+     res.setHeader('Access-Control-Allow-Origin', allowedOrigin); 
+  // } else { /* 拒否 or 警告 */ }
+  res.setHeader('Content-Type', 'application/json');
 
-  // --- Validate APPS_SCRIPT_URL ---
+  // --- Check GAS URL ---
   if (!APPS_SCRIPT_URL) {
-    console.error('Environment variable APPS_SCRIPT_URL is not set.');
-    res.status(500).json({ status: 'error', message: 'Server configuration error: GAS URL not found.' });
+    console.error('APPS_SCRIPT_URL not set.');
+    res.status(500).json({ status: 'error', message: 'Server config error: GAS URL missing.' });
     return;
   }
 
   try {
-    // --- Forward the request body to Google Apps Script ---
-    const response = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(req.body), // Vercelが自動でパースしてくれる
-      redirect: 'follow' // GASはリダイレクトすることがあるため必要
-    });
+    // --- Forward Request to GAS ---
+    console.log('Forwarding to GAS:', APPS_SCRIPT_URL);
+    console.log('Request body:', req.body); 
 
-    // --- Handle GAS Response ---
-    if (!response.ok) {
-      // GAS returned an error (e.g., script error, permission issue)
-      const errorText = await response.text();
-      console.error(`GAS Error (${response.status}): ${errorText}`);
-      // GASからのエラーメッセージをそのまま返すか、汎用的なメッセージにするか選択
-      // 詳細なエラーをクライアントに返さない方が安全な場合もある
-      try {
-          const gasError = JSON.parse(errorText);
-          res.status(response.status).json(gasError); // GASがJSONエラーを返した場合
-      } catch (parseError){
-           res.status(500).json({ status: 'error', message: 'Failed to process response from backend service.'});
-      }
-      return;
+    // Body validation
+    if (!req.body || typeof req.body !== 'object' || typeof req.body.userEmail !== 'string' || typeof req.body.scannedQrData !== 'string' || typeof req.body.storeId !== 'string') { // ★ storeIdもチェック
+         console.error('Invalid body structure/types:', req.body);
+         res.status(400).json({ status: 'error', message: 'Invalid request: Expecting JSON with string userEmail, scannedQrData, and storeId.' });
+         return;
     }
 
-    // --- Relay the successful GAS JSON response back to the client ---
-    const data = await response.json();
-    res.status(200).json(data);
+    // Fetch GAS
+    const gasResponse = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body), // req.body をそのままGASへ
+      redirect: 'follow',
+      // timeout: 15000 
+    });
+    console.log(`GAS status: ${gasResponse.status}`);
+
+    // --- Process GAS Response ---
+    const responseBody = await gasResponse.text(); 
+    console.log('Raw GAS response:', responseBody);
+
+    const gasContentType = gasResponse.headers.get('content-type') || 'application/json';
+    res.setHeader('Content-Type', gasContentType); 
+    res.status(gasResponse.status); 
+    res.send(responseBody); // Relay response body
+    console.log('Response relayed to client.');
 
   } catch (error) {
-    // --- Handle Network or other unexpected errors ---
-    console.error('Proxy Error:', error);
-    res.status(500).json({ status: 'error', message: 'Proxy server error: ' + error.message });
+    // --- Error Handling ---
+    console.error('Proxy Error:', error.name, error.message, error.stack);
+    if (!res.headersSent) {
+       let errorMessage = 'Proxy server error.';
+       if (error.code === 'ETIMEDOUT' || error.message.includes('timeout')) { errorMessage = 'Backend timeout.'; } 
+       else if (error.name === 'FetchError') { errorMessage = 'Backend connection failed.'; }
+       res.status(500).json({ status: 'error', message: errorMessage });
+    } else {
+       console.error("Headers sent, cannot send error JSON.");
+       res.end(); 
+    }
   }
 };
