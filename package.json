@@ -1,0 +1,15 @@
+{
+  "name": "saku-proxy-api",
+  "version": "1.0.0",
+  "description": "Proxy API for Saku Point Rally",
+  "main": "api/index.js",
+  "scripts": {
+    "start": "vercel dev"
+  },
+  "dependencies": {
+    "node-fetch": "^2.6.7"
+  },
+  "devDependencies": {
+    "vercel": "^30.0.0" 
+  }
+}
