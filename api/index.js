@@ -27,7 +27,7 @@ module.exports = async (req, res) => {
 
   // --- CORS for POST ---
   const requestOrigin = req.headers.origin;
-  const allowedOrigin = 'YOUR_GITHUB_PAGES_BASE_URL_HERE'; // ★★★ 下で変更 ★★★
+  const allowedOrigin = 'https://y2ueno.github.io'; // ★★★ 下で変更 ★★★
   // オリジンチェック (本番では厳密に)
   // if (requestOrigin === allowedOrigin || !requestOrigin) { // 同一オリジン or 直接アクセス
      res.setHeader('Access-Control-Allow-Origin', allowedOrigin); 
