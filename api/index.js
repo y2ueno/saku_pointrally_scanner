@@ -7,7 +7,7 @@ const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 module.exports = async (req, res) => {
   // --- CORS Preflight (OPTIONS) ---
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', 'https://y2ueno.github.io'); // ★★★ 下で変更 ★★★
+    res.setHeader('Access-Control-Allow-Origin', 'https://y2ueno.github.io'); 
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.setHeader('Access-Control-Max-Age', '86400'); 
@@ -19,19 +19,14 @@ module.exports = async (req, res) => {
   // --- Method Check (POST only) ---
   if (req.method !== 'POST') {
     console.log(`Method Not Allowed: ${req.method}`);
-    res.setHeader('Access-Control-Allow-Origin', 'https://y2ueno.github.io'); // ★★★ 下で変更 ★★★
+    res.setHeader('Access-Control-Allow-Origin', 'https://y2ueno.github.io'); 
     res.setHeader('Content-Type', 'application/json');
     res.status(405).json({ status: 'error', message: 'Method Not Allowed' });
     return;
   }
 
   // --- CORS for POST ---
-  const requestOrigin = req.headers.origin;
-  const allowedOrigin = 'https://y2ueno.github.io'; // ★★★ 下で変更 ★★★
-  // オリジンチェック (本番では厳密に)
-  // if (requestOrigin === allowedOrigin || !requestOrigin) { // 同一オリジン or 直接アクセス
-     res.setHeader('Access-Control-Allow-Origin', allowedOrigin); 
-  // } else { /* 拒否 or 警告 */ }
+  res.setHeader('Access-Control-Allow-Origin', 'https://y2ueno.github.io'); 
   res.setHeader('Content-Type', 'application/json');
 
   // --- Check GAS URL ---
@@ -42,24 +37,38 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // --- Forward Request to GAS ---
     console.log('Forwarding to GAS:', APPS_SCRIPT_URL);
     console.log('Request body:', req.body); 
 
-    // Body validation
-    if (!req.body || typeof req.body !== 'object' || typeof req.body.userEmail !== 'string' || typeof req.body.scannedQrData !== 'string' || typeof req.body.storeId !== 'string') { // ★ storeIdもチェック
-         console.error('Invalid body structure/types:', req.body);
-         res.status(400).json({ status: 'error', message: 'Invalid request: Expecting JSON with string userEmail, scannedQrData, and storeId.' });
-         return;
-    }
+    // ★★★★★【ロジック修正】★★★★★
+    // リクエストボディの内容に基づいて検証ロジックを分岐させる
 
-    // Fetch GAS
+    if (req.body && req.body.action === 'redeem') {
+        // 【スタッフ用】景品交換リクエストの検証
+        if (typeof req.body.staffEmail !== 'string' || typeof req.body.voucherId !== 'string') {
+             console.error('Invalid redeem request structure/types:', req.body);
+             res.status(400).json({ status: 'error', message: 'Invalid redeem request: Expecting JSON with string staffEmail and string voucherId.' });
+             return;
+        }
+        console.log('Redeem request validated.');
+    } else {
+        // 【ユーザー用】ポイントスキャンリクエストの検証 (デフォルト)
+        if (!req.body || typeof req.body !== 'object' || typeof req.body.userEmail !== 'string' || typeof req.body.scannedQrData !== 'string' || typeof req.body.storeId !== 'string') { 
+             console.error('Invalid point scan request structure/types:', req.body);
+             // ↓ ユーザー様が報告したエラーメッセージ（の元になったロジック）
+             res.status(400).json({ status: 'error', message: 'Invalid request: Expecting JSON with string userEmail, scannedQrData, and storeId.' });
+             return;
+        }
+        console.log('Point scan request validated.');
+    }
+    // ★★★★★★★★★★★★★★★★★★★
+
+    // Fetch GAS (検証を通過したリクエストのみ)
     const gasResponse = await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req.body), // req.body をそのままGASへ
       redirect: 'follow',
-      // timeout: 15000 
     });
     console.log(`GAS status: ${gasResponse.status}`);
 
