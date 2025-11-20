@@ -1,136 +1,131 @@
-// scanner.js (Fix: Use facingMode: "environment")
+// --------------------------------------------------
+// ★ ユーザー用スキャナー (ポイント獲得用) ★
+// --------------------------------------------------
+const serverUrl = 'https://saku-pointrally-proxy.vercel.app/api'; 
+const redirectTimeout = 5000; // 5秒後に戻る
 
-// Vercel API (GAS Proxy) Endpoint
-const API_ENDPOINT = 'https://saku-pointrally-proxy.vercel.app/api';
+let userEmail = '';
+let currentStoreId = ''; 
+let isScanning = false; 
+let html5QrCode = null; 
 
-// --- 1. Glideからデータを受け取るリスナー ---
-let glideData = {};
-window.addEventListener('message', (e) => {
-    if (e.data && e.data.glideData) {
-        try {
-            const receivedData = JSON.parse(e.data.glideData);
-            glideData.userEmail = receivedData.userEmail || 'unknown_email';
-            glideData.storeId = receivedData.storeId || 'unknown_storeId';
-            console.log('Glide data received:', glideData);
-        } catch (error) {
-            console.error('Error parsing glideData:', error);
-            showResult('ERROR: アプリデータの解析に失敗', true);
-        }
+document.addEventListener('DOMContentLoaded', (event) => {
+    console.log("DOM loaded (User)");
+    const urlParams = new URLSearchParams(window.location.search);
+    userEmail = urlParams.get('email');
+    currentStoreId = urlParams.get('storeId');
+    
+    console.log(`User: ${userEmail}, Store: ${currentStoreId}`);
+
+    // 必須パラメータチェック
+    if (!userEmail || !currentStoreId) {
+        displayResult('error', 'ユーザー情報または店舗情報が取得できませんでした。URLを確認してください。');
+        return;
     }
-});
-
-// --- 2. スキャナーのセットアップ (DOM読み込み後) ---
-document.addEventListener('DOMContentLoaded', () => {
-    // Html5QrcodeScanner (UI付き) ではなく、Html5Qrcode (Core) を使う
-    const html5QrCode = new Html5Qrcode("reader");
-    const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        // rememberLastUsedCamera: false, // 最後に使ったカメラを記憶しない
-        // experimentalFeatures: {
-        //     useNewScanner: true
-        // }
-    };
-
-    // スキャン成功時のコールバック
-    const onScanSuccess = (decodedText, decodedResult) => {
-        console.log(`Scan successful: ${decodedText}`);
-        // スキャンを停止（重複送信防止）
-        html5QrCode.stop().then(() => {
-            console.log('Scanner stopped.');
-            // サーバーに送信
-            sendQrData(decodedText);
-        }).catch(err => {
-            console.error('Failed to stop scanner:', err);
-            sendQrData(decodedText); // ストップ失敗しても送信は試みる
-        });
-    };
-
-    // スキャン失敗時（デコード失敗など、エラーではない）
-    const onScanFailure = (error) => {
-        // （ここでは何もしない。コンソールが埋まるため）
-        // console.warn(`QR code scan failure: ${error}`);
-    };
-
-    // --- 3. スキャナの起動 ---
-    console.log('Starting scanner...');
-    showResult('QRコードを読み取ってください...', false);
-
-    // ★★★★★【バグ修正】★★★★★
-    // カメラID (cameraId) ではなく、
-    // facingMode: "environment" (背面カメラ) を指定する
-    html5QrCode.start(
-        { facingMode: "environment" }, 
-        config,
-        onScanSuccess,
-        onScanFailure
-    ).catch((err) => {
-        console.error(`Failed to start scanner: ${err}`);
-        // 背面カメラ(environment)が失敗した場合、 
-        // どのカメラでも良い(user=インカメラも含む)設定でリトライ
-        console.warn('Retrying with default facingMode (any)...');
-        html5QrCode.start(
-            {}, // カメラ指定なし (OS/ブラウザに任せる)
-            config,
-            onScanSuccess,
-            onScanFailure
-        ).catch((errRetry) => {
-            console.error(`Failed to start scanner on retry: ${errRetry}`);
-            showResult(`エラー: カメラの起動に失敗しました。 ${errRetry}`, true);
-        });
-    });
-    // ★★★★★★★★★★★★★★★★★
-
-}); // DOMContentLoaded end
-
-// --- 4. サーバー（Vercel/GAS）へのデータ送信 ---
-async function sendQrData(scannedQrData) {
-    showResult('ポイント確認中...', false);
-
-    if (!glideData.userEmail || !glideData.storeId) {
-        console.error('Glide data missing.', glideData);
-        showResult('ERROR: アプリデータがありません。', true);
+    
+    // ライブラリ読み込みチェック
+    if (typeof Html5Qrcode === 'undefined') {
+        displayResult('error', 'スキャナーの起動に失敗しました(Lib)。リロードしてください。');
         return;
     }
 
-    const payload = {
-        userEmail: glideData.userEmail,
-        storeId: glideData.storeId,
-        scannedQrData: scannedQrData
-        // (action: 'point_scan' は Vercel/GAS側でデフォルトとして扱う)
+    // HTMLのID "qr-reader" と一致させる
+    html5QrCode = new Html5Qrcode("qr-reader");
+    startScanning();
+});
+
+function startScanning() {
+    if (isScanning) return;
+    isScanning = true; 
+    displayResult('info', '店舗のQRコードを読み取ってください...'); 
+    
+    const config = { 
+        fps: 10, 
+        qrbox: { width: 250, height: 250 },
+        // 背面カメラを優先
+        videoConstraints: { facingMode: "environment" }
     };
-
-    try {
-        const response = await fetch(API_ENDPOINT, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload),
-        });
-
-        const result = await response.json();
-        console.log('Server response:', result);
-
-        if (result.status === 'success') {
-            showResult(`OK: ${result.message}`, false);
-            // 成功したらアプリ（Glide）に通知（任意）
-            window.parent.postMessage({ status: 'success', message: result.message }, '*');
-        } else {
-            showResult(`NG: ${result.message}`, true);
+    
+    Html5Qrcode.getCameras().then(devices => {
+        if (devices && devices.length) { 
+           let cameraId = devices[0].id;
+           const backCam = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('rear'));
+           if (backCam) cameraId = backCam.id;
+           
+           html5QrCode.start(cameraId, config, (decodedText) => {
+                if (isScanning) {
+                    isScanning = false;
+                    playScanSound();
+                    html5QrCode.stop().then(() => {
+                        sendScanData(decodedText);
+                    }).catch(() => sendScanData(decodedText));
+                }
+           }, () => {})
+           .catch(err => {
+               displayResult('error', 'カメラの起動に失敗しました。権限を確認してください。');
+               isScanning = false;
+           });
+        } else { 
+            displayResult('error', 'カメラが見つかりません。');
+            isScanning = false;
         }
-
-    } catch (error) {
-        console.error('Fetch error:', error);
-        showResult(`ERROR: サーバー通信に失敗しました。 ${error.message}`, true);
-    }
+    }).catch(err => {
+        displayResult('error', 'カメラ情報の取得に失敗しました。');
+        isScanning = false;
+    });
 }
 
-// --- 5. 結果表示 ---
-function showResult(message, isError = false) {
-    const resultEl = document.getElementById('scan-result');
-    if (resultEl) {
-        resultEl.textContent = message;
-        resultEl.style.color = isError ? 'red' : 'green';
-    }
+function sendScanData(scannedQrData) {
+    displayResult('loading', 'ポイント確認中...'); 
+    
+    // Vercel API (GAS) へ送信
+    fetch(serverUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', },
+        body: JSON.stringify({
+            // actionは指定なし（デフォルトでポイント獲得処理になる）
+            userEmail: userEmail,
+            scannedQrData: scannedQrData,
+            storeId: currentStoreId 
+        }),
+    })
+    .then(async response => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+             throw new Error(data.message || `Server Error: ${response.status}`);
+        }
+        return data;
+    })
+    .then(data => {
+        if (data.status === 'success') {
+            displayResult('success', data.message);
+        } else { 
+            displayResult('error', data.message);
+        }
+        setTimeout(() => { 
+            if(window.history.length > 1) window.history.back(); 
+        }, redirectTimeout);
+    })
+    .catch((error) => {
+        displayResult('error', error.message || '通信エラーが発生しました。');
+        setTimeout(() => { 
+            if(window.history.length > 1) window.history.back(); 
+        }, redirectTimeout);
+    });
+}
+
+function displayResult(type, message) { 
+    const el = document.getElementById('qr-reader-results'); 
+    if(!el) return;
+    el.style.display = 'block'; 
+    el.className = type; 
+    el.innerHTML = message;
+}
+
+function playScanSound() { 
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 0.1);
 }
