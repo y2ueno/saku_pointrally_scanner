@@ -1,5 +1,5 @@
 // --------------------------------------------------
-// ★ ユーザー用スキャナー (ポイント獲得用) ★
+// ★ ユーザー用スキャナー (スマホ対応・安定版) ★
 // --------------------------------------------------
 const serverUrl = 'https://saku-pointrally-proxy.vercel.app/api'; 
 const redirectTimeout = 5000; // 5秒後に戻る
@@ -11,66 +11,85 @@ let html5QrCode = null;
 
 document.addEventListener('DOMContentLoaded', (event) => {
     console.log("DOM loaded (User)");
+    
+    // 1. URLパラメータ取得
     const urlParams = new URLSearchParams(window.location.search);
     userEmail = urlParams.get('email');
     currentStoreId = urlParams.get('storeId');
     
     console.log(`User: ${userEmail}, Store: ${currentStoreId}`);
 
-    // 必須パラメータチェック
+    // 2. 必須パラメータチェック
     if (!userEmail || !currentStoreId) {
         displayResult('error', 'ユーザー情報または店舗情報が取得できませんでした。URLを確認してください。');
         return;
     }
     
-    // ライブラリ読み込みチェック
+    // 3. ライブラリ読み込みチェック
     if (typeof Html5Qrcode === 'undefined') {
         displayResult('error', 'スキャナーの起動に失敗しました(Lib)。リロードしてください。');
         return;
     }
 
-    // HTMLのID "qr-reader" と一致させる
-    html5QrCode = new Html5Qrcode("qr-reader");
+    // 4. スキャン開始
     startScanning();
 });
 
 function startScanning() {
     if (isScanning) return;
     isScanning = true; 
-    displayResult('info', '店舗のQRコードを読み取ってください...'); 
+    displayResult('info', 'カメラへのアクセスを求めています...'); 
     
+    // ★★★ 修正ポイント: インスタンス生成 ★★★
+    // ID "qr-reader" の要素を使用
+    html5QrCode = new Html5Qrcode("qr-reader");
+
     const config = { 
         fps: 10, 
-        qrbox: { width: 250, height: 250 },
-        // 背面カメラを優先
-        videoConstraints: { facingMode: "environment" }
+        qrbox: { width: 250, height: 250 }
     };
-    
-    Html5Qrcode.getCameras().then(devices => {
-        if (devices && devices.length) { 
-           let cameraId = devices[0].id;
-           const backCam = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('rear'));
-           if (backCam) cameraId = backCam.id;
-           
-           html5QrCode.start(cameraId, config, (decodedText) => {
-                if (isScanning) {
-                    isScanning = false;
-                    playScanSound();
-                    html5QrCode.stop().then(() => {
-                        sendScanData(decodedText);
-                    }).catch(() => sendScanData(decodedText));
-                }
-           }, () => {})
-           .catch(err => {
-               displayResult('error', 'カメラの起動に失敗しました。権限を確認してください。');
-               isScanning = false;
-           });
-        } else { 
-            displayResult('error', 'カメラが見つかりません。');
-            isScanning = false;
+
+    // ★★★ 修正ポイント: カメラID指定をやめ、facingModeを使用 ★★★
+    // これによりスマホの背面カメラが自動的に選択されます
+    html5QrCode.start(
+        { facingMode: "environment" }, // リアカメラを指定
+        config, 
+        (decodedText, decodedResult) => {
+            // --- スキャン成功時の処理 ---
+            if (isScanning) {
+                console.log(`QR Scanned: ${decodedText}`);
+                isScanning = false; // 二重読み込み防止
+                playScanSound();
+                
+                // カメラを停止してから送信（停止失敗しても送信はする）
+                html5QrCode.stop().then(() => {
+                    sendScanData(decodedText);
+                }).catch(err => {
+                    console.warn("Stop failed", err);
+                    sendScanData(decodedText);
+                });
+            }
+        },
+        (errorMessage) => {
+            // スキャン中の小エラーは無視（ログに出すと重くなるため）
         }
-    }).catch(err => {
-        displayResult('error', 'カメラ情報の取得に失敗しました。');
+    )
+    .then(() => {
+        console.log("Camera started.");
+        displayResult('info', '店舗のQRコードを読み取ってください...');
+    })
+    .catch(err => {
+        console.error("Camera start error:", err);
+        // エラー内容に応じたメッセージ表示
+        let msg = 'カメラの起動に失敗しました。';
+        if (err.name === 'NotAllowedError') {
+            msg = 'カメラの許可がありません。ブラウザの設定で許可してください。';
+        } else if (err.name === 'NotFoundError') {
+            msg = 'カメラが見つかりません。';
+        } else if (err.name === 'NotReadableError') {
+            msg = 'カメラにアクセスできません（他のアプリが使用中など）。';
+        }
+        displayResult('error', msg);
         isScanning = false;
     });
 }
@@ -83,7 +102,6 @@ function sendScanData(scannedQrData) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', },
         body: JSON.stringify({
-            // actionは指定なし（デフォルトでポイント獲得処理になる）
             userEmail: userEmail,
             scannedQrData: scannedQrData,
             storeId: currentStoreId 
@@ -123,7 +141,9 @@ function displayResult(type, message) {
 }
 
 function playScanSound() { 
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
     const o = ctx.createOscillator();
     const g = ctx.createGain();
     o.connect(g); g.connect(ctx.destination);
